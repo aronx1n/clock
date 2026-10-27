@@ -1,0 +1,708 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="晨昏线时钟"><style>body{margin:0}[hidden]{display:none!important}</style></head><body>
+<title>晨昏线时钟</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@200;300;500&family=DM+Mono:wght@300;400&display=swap">
+<style>
+/* Layout: one screen, globe on the left, time and readings stacked on the right; stacks vertically when portrait. */
+:root {
+  --ink: #090c11;        /* night sky ground */
+  --fg: #ebe6da;         /* warm paper white */
+  --muted: #868b94;      /* blue-biased grey */
+  --faint: #2a3039;      /* hairlines */
+  --sun: #f0b35b;        /* sunlight amber */
+  --live: #3ddc84;       /* live location */
+  --sea: #1c3c55;
+  --land: #8b8566;
+  --f-time: "Big Shoulders Display", "Avenir Next Condensed", "Arial Narrow", sans-serif;
+  --f-mono: "DM Mono", ui-monospace, Menlo, monospace;
+  --f-cjk: -apple-system, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  background: var(--ink); color: var(--fg);
+  font-family: var(--f-cjk);
+  overflow: hidden;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  box-sizing: border-box;
+  -webkit-user-select: none; user-select: none;
+}
+.stage {
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(16px, 4vw, 56px);
+  padding-block: clamp(12px, 3vh, 32px);
+  box-sizing: border-box;
+}
+.globe-wrap { position: relative; height: 100%; min-height: 0; display: flex; align-items: center; justify-content: center; }
+canvas#globe { width: 100%; height: 100%; display: block; }
+.globe-cap {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  text-align: center; font-family: var(--f-mono); font-size: 11px; letter-spacing: .14em;
+  color: var(--muted); text-transform: uppercase;
+}
+.readout { min-width: 0; display: flex; flex-direction: column; gap: clamp(14px, 3.2vh, 30px); }
+.msg { margin: 0; font-size: clamp(17px, 2.1vw, 23px); line-height: 1.5; color: var(--muted); text-wrap: pretty; max-width: 30em; }
+.msg b { color: var(--fg); font-weight: 500; }
+.clock { display: flex; flex-direction: column; gap: clamp(10px, 2vh, 18px); }
+.time {
+  font-family: var(--f-time); font-weight: 200;
+  font-size: clamp(88px, 17vw, 210px); line-height: .82; letter-spacing: -.01em;
+  font-variant-numeric: tabular-nums; display: flex; align-items: flex-start; gap: .06em;
+}
+.time .colon { color: var(--sun); opacity: .9; transition: opacity .4s; }
+.time .colon.dim { opacity: .25; }
+.time .sec {
+  font-size: .26em; font-weight: 300; color: var(--muted); margin-top: .18em; margin-left: .1em;
+  font-variant-numeric: tabular-nums; width: 1.3em;
+}
+.date { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; font-size: clamp(17px, 2.2vw, 24px); letter-spacing: .04em; }
+.date .lunar { color: var(--muted); font-size: .78em; }
+.rule { height: 1px; background: var(--faint); }
+.wx { display: flex; align-items: center; gap: clamp(14px, 2.4vw, 26px); }
+.wx .temp { font-family: var(--f-time); font-weight: 300; font-size: clamp(54px, 8vw, 92px); line-height: .85; font-variant-numeric: tabular-nums; }
+.wx .temp sup { font-size: .4em; vertical-align: top; color: var(--muted); margin-left: 2px; }
+.wxtext { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.wx .cond { font-size: clamp(18px, 2.1vw, 23px); }
+.wx .meta { color: var(--muted); font-size: 14px; font-family: var(--f-mono), var(--f-cjk); }
+.note { color: var(--muted); font-size: 13px; }
+.foot { display: flex; flex-direction: column; align-items: flex-start; gap: clamp(12px, 2.2vh, 20px); }
+.sunrow { display: flex; flex-wrap: wrap; gap: 6px clamp(16px, 2.6vw, 28px); align-items: baseline; }
+.lbl { font-size: 13px; color: var(--muted); letter-spacing: .1em; }
+.val { font-family: var(--f-mono); font-size: clamp(15px, 1.9vw, 20px); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.val.sunv { color: var(--sun); }
+button.city {
+  font: inherit; font-size: 13px; color: var(--fg); background: transparent;
+  border: 1px solid var(--faint); border-radius: 999px; padding: 5px 12px; cursor: pointer;
+}
+button.city:hover { border-color: var(--muted); }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outline-offset: 2px; }
+
+.sheet {
+  position: fixed; inset: 0; background: rgba(5,7,10,.72); display: flex; align-items: center; justify-content: center; z-index: 20;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.sheet .box { background: #11161d; border: 1px solid var(--faint); border-radius: 14px; padding: 22px; width: min(360px, 100%); display: flex; flex-direction: column; gap: 16px; box-sizing: border-box; }
+.sheet h2 { margin: 0; font-size: 17px; font-weight: 500; }
+.sheet label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+.sheet select { font: inherit; font-size: 16px; color: var(--fg); background: var(--ink); border: 1px solid var(--faint); border-radius: 8px; padding: 8px; }
+.sheet .chk { flex-direction: row; align-items: center; gap: 10px; color: var(--fg); font-size: 15px; }
+.sheet .chk input { width: 18px; height: 18px; accent-color: var(--sun); }
+.sheet .done { align-self: flex-end; font: inherit; font-size: 15px; background: var(--sun); color: #1a1206; border: 0; border-radius: 8px; padding: 8px 18px; cursor: pointer; }
+.sheet .hint { font-size: 12px; color: var(--muted); margin: 0; line-height: 1.5; }
+
+.dimmer { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 2s; z-index: 10; }
+
+@media (orientation: portrait), (max-width: 700px) {
+  .stage { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; align-items: stretch; gap: 18px; }
+  .readout { gap: 16px; }
+  .time { font-size: clamp(72px, 22vw, 190px); }
+}
+@media (max-width: 480px) {
+}
+.pin { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; will-change: transform; }
+.pin .dot, .pin .ring { position: absolute; left: -5px; top: -5px; width: 10px; height: 10px; border-radius: 50%; }
+.pin .dot { background: var(--live); box-shadow: 0 0 10px 3px rgba(61,220,132,.65); animation: breathe 2.4s ease-in-out infinite; }
+.pin .ring { border: 1.5px solid var(--live); animation: ripple 2.4s ease-out infinite; }
+.pin .name { position: absolute; left: 14px; top: -9px; font-size: 13px; color: var(--fg); white-space: nowrap; text-shadow: 0 0 4px #000, 0 0 2px #000; }
+@keyframes breathe { 0%, 100% { transform: scale(.8); opacity: .8; } 50% { transform: scale(1.2); opacity: 1; } }
+@keyframes ripple { 0% { transform: scale(1); opacity: .9; } 100% { transform: scale(3.8); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .time .colon, .dimmer { transition: none; } .pin .dot, .pin .ring { animation: none; } }
+</style>
+
+<main class="stage">
+  <div class="globe-wrap">
+    <canvas id="globe" aria-label="实时地球昼夜示意"></canvas>
+    <div class="pin" id="pin" hidden><span class="ring"></span><span class="dot"></span><span class="name" id="pinName"></span></div>
+    <div class="globe-cap" id="cap"></div>
+  </div>
+
+  <section class="readout">
+    <p class="msg" id="msg">你好，袁石。</p>
+    <div class="clock">
+      <div class="time" aria-live="off"><span id="hh">--</span><span class="colon" id="colon">:</span><span id="mm">--</span><span class="sec" id="ss">--</span></div>
+      <div class="date"><span id="date">—</span><span class="lunar" id="lunar"></span></div>
+    </div>
+    <div class="rule"></div>
+    <div class="wx" id="wx">
+      <div class="temp" id="temp">--<sup>°C</sup></div>
+      <div class="wxtext">
+        <div class="cond" id="cond">正在获取天气</div>
+        <div class="meta" id="wxmeta"></div>
+      </div>
+    </div>
+    <div class="note" id="wxnote" hidden></div>
+    <div class="foot">
+      <div class="sunrow">
+        <span><span class="lbl">日出</span> <span class="val" id="rise">--:--</span></span>
+        <span><span class="lbl">日落</span> <span class="val" id="set">--:--</span></span>
+      </div>
+      <button class="city" id="cityBtn" type="button">上海</button>
+    </div>
+  </section>
+</main>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="box" role="dialog" aria-labelledby="sheetTitle">
+    <h2 id="sheetTitle">设置</h2>
+    <label for="citySel">位置（用于天气、日出日落和地球朝向）
+      <select id="citySel"></select>
+    </label>
+    <label class="chk" for="dimChk"><input type="checkbox" id="dimChk"> 夜间自动调暗（23:00–06:30）</label>
+    <p class="hint">键盘：C 打开设置，Esc 关闭。时间按本机时区显示。</p>
+    <button class="done" id="doneBtn" type="button">完成</button>
+  </div>
+</div>
+<div class="dimmer" id="dimmer"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script>
+  // Stub so the ECharts world map file hands its geometry to us instead of to ECharts.
+  window.__worldGeo = null;
+  window.echarts = { registerMap: function (name, geo) { window.__worldGeo = geo; } };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@4.9.0/map/js/world.js"></script>
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const RAD = Math.PI / 180, DEG = 180 / Math.PI;
+
+  const CITIES = [
+    ["上海", 31.23, 121.47], ["北京", 39.90, 116.40], ["杭州", 30.27, 120.15], ["南京", 32.06, 118.80],
+    ["盐城", 33.35, 120.16], ["苏州", 31.30, 120.62], ["广州", 23.13, 113.26], ["深圳", 22.54, 114.06],
+    ["成都", 30.57, 104.07], ["重庆", 29.56, 106.55], ["武汉", 30.59, 114.31], ["西安", 34.34, 108.94],
+    ["长沙", 28.23, 112.94], ["厦门", 24.48, 118.09], ["青岛", 36.07, 120.38], ["昆明", 25.04, 102.71],
+    ["哈尔滨", 45.80, 126.53], ["乌鲁木齐", 43.83, 87.62], ["拉萨", 29.65, 91.14], ["香港", 22.32, 114.17],
+    ["台北", 25.03, 121.57], ["东京", 35.68, 139.69], ["伦敦", 51.51, -0.13], ["纽约", 40.71, -74.01]
+  ];
+
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem("tclock:" + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem("tclock:" + k, JSON.stringify(v)); } catch (e) {} }
+  };
+  let cityIdx = store.get("city", "auto"); if (cityIdx !== "auto" && !CITIES[cityIdx]) cityIdx = "auto";
+  let here = null, hereErr = false, locTimer = null;
+  let autoDim = store.get("dim", true);
+  const city = () => cityIdx === "auto"
+    ? (here ? { name: "当前位置", lat: here.lat, lon: here.lon } : { name: "上海", lat: 31.23, lon: 121.47 })
+    : { name: CITIES[cityIdx][0], lat: CITIES[cityIdx][1], lon: CITIES[cityIdx][2] };
+
+  /* ---------- Sun position (low-precision solar ephemeris, ~0.01°) ---------- */
+  function sunPos(date) {
+    const d = date.getTime() / 86400000 + 2440587.5 - 2451545.0;
+    const g = (357.529 + 0.98560028 * d) * RAD;
+    const q = 280.459 + 0.98564736 * d;
+    const L = (q + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * RAD;
+    const e = (23.439 - 0.00000036 * d) * RAD;
+    const ra = Math.atan2(Math.cos(e) * Math.sin(L), Math.cos(L)) * DEG;
+    const dec = Math.asin(Math.sin(e) * Math.sin(L)) * DEG;
+    const gmst = (18.697374558 + 24.06570982441908 * d) % 24;
+    let lon = ra - gmst * 15;
+    lon = ((lon + 540) % 360) - 180;
+    return { lat: dec, lon: lon };
+  }
+  function elevation(date, lat, lon) {
+    const s = sunPos(date);
+    const v = Math.sin(lat * RAD) * Math.sin(s.lat * RAD) + Math.cos(lat * RAD) * Math.cos(s.lat * RAD) * Math.cos((lon - s.lon) * RAD);
+    return Math.asin(v) * DEG;
+  }
+  let sunCache = { key: "", rise: null, set: null };
+  function sunTimes(now, c) {
+    const key = now.toDateString() + c.lat + "," + c.lon;
+    if (sunCache.key === key) return sunCache;
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    let rise = null, set = null, prev = elevation(start, c.lat, c.lon) > -0.833;
+    for (let m = 1; m <= 1440; m++) {
+      const t = new Date(start.getTime() + m * 60000);
+      const up = elevation(t, c.lat, c.lon) > -0.833;
+      if (up && !prev && !rise) rise = t;
+      if (!up && prev && !set) set = t;
+      prev = up;
+    }
+    sunCache = { key, rise, set };
+    return sunCache;
+  }
+
+  /* ---------- Text ---------- */
+  const pad = n => String(n).padStart(2, "0");
+  const fmtHM = t => t ? pad(t.getHours()) + ":" + pad(t.getMinutes()) : "--:--";
+  const CN_NUM = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
+  function lunarDay(n) {
+    if (n <= 10) return "初" + CN_NUM[n];
+    if (n < 20) return "十" + CN_NUM[n - 10];
+    if (n === 20) return "二十";
+    if (n < 30) return "廿" + CN_NUM[n - 20];
+    return "三十";
+  }
+  let lunarFmt = null;
+  try { lunarFmt = new Intl.DateTimeFormat("zh-CN-u-ca-chinese", { year: "numeric", month: "long", day: "numeric" }); } catch (e) {}
+  function lunar(now) {
+    if (!lunarFmt) return "";
+    try {
+      const p = {}; lunarFmt.formatToParts(now).forEach(x => p[x.type] = x.value);
+      const day = parseInt(p.day, 10);
+      if (!p.month || isNaN(day)) return "";
+      return (p.yearName ? p.yearName + "年 " : "") + "农历" + p.month + lunarDay(day);
+    } catch (e) { return ""; }
+  }
+
+  /* ---------- Globe ---------- */
+  const canvas = $("globe"), ctx = canvas.getContext("2d");
+  let land = null;
+  function decodeRing(str, off, scale) {
+    const out = []; let px = off[0], py = off[1];
+    for (let i = 0; i < str.length; i += 2) {
+      let x = str.charCodeAt(i) - 64, y = str.charCodeAt(i + 1) - 64;
+      x = (x >> 1) ^ (-(x & 1)); y = (y >> 1) ^ (-(y & 1));
+      x += px; y += py; px = x; py = y;
+      out.push([x / scale, y / scale]);
+    }
+    return out;
+  }
+  function loadLand() {
+    const g = window.__worldGeo;
+    if (!g || !g.features || typeof d3 === "undefined") return null;
+    const scale = g.UTF8Scale || 1024;
+    const polys = [];
+    g.features.forEach(f => {
+      const geom = f.geometry; if (!geom) return;
+      const enc = g.UTF8Encoding;
+      const list = geom.type === "Polygon" ? [geom.coordinates] : geom.coordinates;
+      const offs = geom.type === "Polygon" ? [geom.encodeOffsets] : geom.encodeOffsets;
+      list.forEach((poly, i) => {
+        const rings = poly.map((r, j) => enc ? decodeRing(r, offs[i][j], scale) : r);
+        let p = { type: "Polygon", coordinates: rings };
+        if (d3.geoArea(p) > 2 * Math.PI) p = { type: "Polygon", coordinates: rings.map(r => r.slice().reverse()) };
+        polys.push(p);
+      });
+    });
+    return { type: "GeometryCollection", geometries: polys };
+  }
+
+  /* ---------- Satellite textures (only load when the page is hosted on its own) ---------- */
+  const GIBS = "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1&SRS=EPSG:4326&BBOX=-180,-90,180,90&WIDTH=2048&HEIGHT=1024&FORMAT=image/jpeg&LAYERS=";
+  const SRC = {
+    day: [GIBS + "BlueMarble_NextGeneration", GIBS + "BlueMarble_ShadedRelief_Bathymetry"],
+    night: [GIBS + "VIIRS_Black_Marble", GIBS + "VIIRS_CityLights_2012"],
+    cloud: ["https://clouds.matteason.co.uk/images/2048x1024/clouds.jpg"]
+  };
+  const TEX = { day: null, night: null, cloud: null };
+  let nightFail = false;
+  function loadOne(url) {
+    return new Promise((res, rej) => {
+      const img = new Image(); img.crossOrigin = "anonymous";
+      const to = setTimeout(() => rej(new Error("timeout")), 30000);
+      img.onload = () => {
+        clearTimeout(to);
+        try {
+          const c = document.createElement("canvas"); c.width = img.naturalWidth; c.height = img.naturalHeight;
+          const x = c.getContext("2d"); x.drawImage(img, 0, 0);
+          res({ data: x.getImageData(0, 0, c.width, c.height).data, w: c.width, h: c.height });
+        } catch (e) { rej(e); }
+      };
+      img.onerror = () => { clearTimeout(to); rej(new Error("load")); };
+      img.src = url;
+    });
+  }
+  async function loadTex(name, bust) {
+    for (const u of SRC[name]) {
+      try { TEX[name] = await loadOne(bust ? u + (u.includes("?") ? "&" : "?") + "t=" + Date.now() : u); return true; } catch (e) {}
+    }
+    return false;
+  }
+  // Clouds: global cloud map, refreshed every 3 hours.
+  async function loadCloud() {
+    const ok = await loadTex("cloud", true);
+    if (ok) lastMin = -1;
+    setTimeout(loadCloud, (ok ? 3 * 60 : 20) * 60000);
+  }
+  function loadSatellite() {
+    loadTex("day").then(ok => { if (ok) lastMin = -1; });
+    loadTex("night").then(ok => { nightFail = !ok; lastMin = -1; });
+    loadCloud();
+  }
+
+  let geo = null;
+  function buildGeo(cw, ch, cxp, cyp, Rp, lat0, lon0) {
+    const la = lat0 * RAD, lo = lon0 * RAD;
+    const C = [Math.cos(la) * Math.cos(lo), Math.cos(la) * Math.sin(lo), Math.sin(la)];
+    const E = [-Math.sin(lo), Math.cos(lo), 0];
+    const N = [-Math.sin(la) * Math.cos(lo), -Math.sin(la) * Math.sin(lo), Math.cos(la)];
+    const x0 = Math.max(0, Math.floor(cxp - Rp)), x1 = Math.min(cw - 1, Math.ceil(cxp + Rp));
+    const y0 = Math.max(0, Math.floor(cyp - Rp)), y1 = Math.min(ch - 1, Math.ceil(cyp + Rp));
+    const cap = (x1 - x0 + 1) * (y1 - y0 + 1);
+    const pix = new Int32Array(cap), tu = new Float32Array(cap), tv = new Float32Array(cap);
+    const nx = new Float32Array(cap), ny = new Float32Array(cap), nz = new Float32Array(cap), lw = new Float32Array(cap);
+    let n = 0;
+    for (let y = y0; y <= y1; y++) {
+      const v = -(y + 0.5 - cyp) / Rp;
+      for (let x = x0; x <= x1; x++) {
+        const u = (x + 0.5 - cxp) / Rp, q = u * u + v * v;
+        if (q > 1) continue;
+        const w = Math.sqrt(1 - q);
+        const X = w * C[0] + u * E[0] + v * N[0], Y = w * C[1] + u * E[1] + v * N[1], Z = w * C[2] + u * E[2] + v * N[2];
+        pix[n] = y * cw + x; nx[n] = X; ny[n] = Y; nz[n] = Z; lw[n] = w;
+        tu[n] = (Math.atan2(Y, X) * DEG + 180) / 360; tv[n] = (90 - Math.asin(Math.max(-1, Math.min(1, Z))) * DEG) / 180;
+        n++;
+      }
+    }
+    return { n, pix, tu, tv, nx, ny, nz, lw, C, E, N };
+  }
+
+  function drawRaster(now) {
+    const c = city(), s = sunPos(now);
+    const tilt = Math.max(-35, Math.min(35, c.lat * 0.75));
+    const cw = canvas.width, ch = canvas.height, Rp = R * dpr, cxp = cx * dpr, cyp = cy * dpr;
+    const key = [cw, ch, Rp, c.lon, tilt].join(",");
+    if (!geo || geo.key !== key) { geo = buildGeo(cw, ch, cxp, cyp, Rp, tilt, c.lon); geo.key = key; }
+    const sl = s.lat * RAD, so = s.lon * RAD;
+    const Sx = Math.cos(sl) * Math.cos(so), Sy = Math.cos(sl) * Math.sin(so), Sz = Math.sin(sl);
+    const D = TEX.day, Nt = TEX.night, Cl = TEX.cloud;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const img = ctx.createImageData(cw, ch), out = img.data;
+    for (let i = 0; i < geo.n; i++) {
+      const dot = geo.nx[i] * Sx + geo.ny[i] * Sy + geo.nz[i] * Sz;
+      const u = geo.tu[i], v = geo.tv[i];
+      let k = (Math.min(D.w - 1, (u * D.w) | 0) + Math.min(D.h - 1, (v * D.h) | 0) * D.w) * 4;
+      const r0 = D.data[k], g0 = D.data[k + 1], b0 = D.data[k + 2];
+      let t = (dot + 0.12) / 0.22; t = t < 0 ? 0 : t > 1 ? 1 : t; const day = t * t * (3 - 2 * t);
+      const light = dot > 0 ? Math.min(1.12, 0.3 + 0.9 * Math.sqrt(dot)) : 0.3;
+      const nr = r0 * 0.05, ng = g0 * 0.06, nb = b0 * 0.09;
+      // City lights switch on wherever the ground is getting dark: from sun ~9° high, full once it sets.
+      let glow = 0;
+      if (Nt) {
+        const kn = (Math.min(Nt.w - 1, (u * Nt.w) | 0) + Math.min(Nt.h - 1, (v * Nt.h) | 0) * Nt.w) * 4;
+        const L = (Nt.data[kn] + Nt.data[kn + 1] + Nt.data[kn + 2]) / 3;
+        if (L > 32) {
+          let f = (0.16 - dot) / 0.2; f = f < 0 ? 0 : f > 1 ? 1 : f; f = f * f * (3 - 2 * f);
+          glow = (L - 32) * 1.5 * f;
+        }
+      }
+      let cloudA = 0;
+      let r = nr + (r0 * light - nr) * day, g = ng + (g0 * light - ng) * day, b = nb + (b0 * light - nb) * day;
+      if (Cl) {
+        const kc = (Math.min(Cl.w - 1, (u * Cl.w) | 0) + Math.min(Cl.h - 1, (v * Cl.h) | 0) * Cl.w) * 4;
+        let a = (Cl.data[kc] + Cl.data[kc + 1] + Cl.data[kc + 2]) / 765; a = a * a * 0.95; cloudA = a;
+        const cc = 16 + (240 * Math.min(1, light) - 16) * day;
+        r += (cc - r) * a; g += (cc - g) * a; b += (cc + 6 * day - b) * a;
+      }
+      if (glow > 0) {
+        const vis = 1 - 0.6 * cloudA;
+        r += glow * vis; g += glow * 0.78 * vis; b += glow * 0.45 * vis;
+      }
+      const lk = 0.55 + 0.45 * geo.lw[i];
+      const o = geo.pix[i] * 4;
+      out[o] = r * lk; out[o + 1] = g * lk; out[o + 2] = b * lk; out[o + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // atmosphere halo behind the disc
+    ctx.globalCompositeOperation = "destination-over";
+    const halo = ctx.createRadialGradient(cx, cy, R * 0.96, cx, cy, R * 1.12);
+    halo.addColorStop(0, "rgba(120,170,220,0.28)"); halo.addColorStop(1, "rgba(120,170,220,0)");
+    ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(cx, cy, R * 1.12, 0, Math.PI * 2); ctx.fill();
+    ctx.globalCompositeOperation = "source-over";
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.strokeStyle = "rgba(160,200,235,0.35)"; ctx.lineWidth = 1; ctx.stroke();
+
+    // city marker
+    const la = c.lat * RAD, lo = c.lon * RAD;
+    const P = [Math.cos(la) * Math.cos(lo), Math.cos(la) * Math.sin(lo), Math.sin(la)];
+    const pz = P[0] * geo.C[0] + P[1] * geo.C[1] + P[2] * geo.C[2];
+    if (pz > 0) setPin(cx + R * (P[0] * geo.E[0] + P[1] * geo.E[1]), cy - R * (P[0] * geo.N[0] + P[1] * geo.N[1] + P[2] * geo.N[2]), c.name);
+    else setPin(null);
+  }
+
+  function setPin(x, y, name) {
+    const pin = $("pin");
+    if (x == null) { pin.hidden = true; return; }
+    pin.hidden = false;
+    pin.style.transform = "translate(" + x.toFixed(1) + "px," + y.toFixed(1) + "px)";
+    $("pinName").textContent = name;
+  }
+
+  let W = 0, H = 0, R = 0, cx = 0, cy = 0, dpr = 1;
+  function resize() {
+    const box = canvas.parentElement.getBoundingClientRect();
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = Math.max(10, box.width); H = Math.max(10, box.height);
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    R = Math.min(W, H) * 0.44; cx = W / 2; cy = H / 2 - 6;
+    drawGlobe(new Date());
+  }
+
+  function drawGlobe(now) {
+    if (TEX.day) { drawRaster(now); return; }
+    if (typeof d3 === "undefined") { drawFallback(now); return; }
+    const c = city(), s = sunPos(now);
+    const tilt = Math.max(-35, Math.min(35, c.lat * 0.75));
+    const proj = d3.geoOrthographic().scale(R).translate([cx, cy]).rotate([-c.lon, -tilt]).clipAngle(90).precision(0.4);
+    const path = d3.geoPath(proj, ctx);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+
+    // atmosphere halo
+    const halo = ctx.createRadialGradient(cx, cy, R * 0.96, cx, cy, R * 1.12);
+    halo.addColorStop(0, "rgba(120,170,220,0.22)"); halo.addColorStop(1, "rgba(120,170,220,0)");
+    ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(cx, cy, R * 1.12, 0, Math.PI * 2); ctx.fill();
+
+    // ocean
+    ctx.beginPath(); path({ type: "Sphere" }); ctx.fillStyle = "#1c3c55"; ctx.fill();
+    // graticule
+    ctx.beginPath(); path(d3.geoGraticule10()); ctx.strokeStyle = "rgba(235,230,218,0.07)"; ctx.lineWidth = 0.6; ctx.stroke();
+    // land
+    if (land) { ctx.beginPath(); path(land); ctx.fillStyle = "#8b8566"; ctx.fill(); ctx.strokeStyle = "rgba(20,22,18,0.35)"; ctx.lineWidth = 0.5; ctx.stroke(); }
+
+    // sunlight bloom toward the subsolar point
+    const sunVisible = d3.geoDistance([s.lon, s.lat], [c.lon, tilt]) < Math.PI / 2;
+    const raw = d3.geoOrthographic().scale(R).translate([cx, cy]).rotate([-c.lon, -tilt]).clipAngle(180)([s.lon, s.lat]);
+    let sx = raw[0], sy = raw[1];
+    if (!sunVisible) { const dx = sx - cx, dy = sy - cy, m = Math.hypot(dx, dy) || 1; sx = cx + dx / m * R * 1.05; sy = cy + dy / m * R * 1.05; }
+    ctx.save(); ctx.beginPath(); path({ type: "Sphere" }); ctx.clip();
+    const bloom = ctx.createRadialGradient(sx, sy, 0, sx, sy, R * 1.3);
+    bloom.addColorStop(0, "rgba(255,214,150,0.30)"); bloom.addColorStop(0.5, "rgba(255,214,150,0.08)"); bloom.addColorStop(1, "rgba(255,214,150,0)");
+    ctx.fillStyle = bloom; ctx.fillRect(0, 0, W, H);
+
+    // night: stacked twilight bands (civil, nautical, astronomical, night)
+    const anti = [s.lon + 180 > 180 ? s.lon - 180 : s.lon + 180, -s.lat];
+    [[90, 0.30], [84, 0.22], [78, 0.18], [72, 0.12]].forEach(([r, a]) => {
+      ctx.beginPath(); path(d3.geoCircle().center(anti).radius(r).precision(1)());
+      ctx.fillStyle = "rgba(4,6,10," + a + ")"; ctx.fill();
+    });
+    // limb shading for depth
+    const limb = ctx.createRadialGradient(cx - R * 0.25, cy - R * 0.3, R * 0.2, cx, cy, R);
+    limb.addColorStop(0, "rgba(0,0,0,0)"); limb.addColorStop(1, "rgba(0,0,0,0.38)");
+    ctx.fillStyle = limb; ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+
+    // terminator line
+    ctx.beginPath(); path(d3.geoCircle().center(anti).radius(90).precision(1)());
+    ctx.strokeStyle = "rgba(240,179,91,0.35)"; ctx.lineWidth = 1; ctx.stroke();
+
+    // live location marker (DOM, so it can breathe without redrawing the globe)
+    const p = proj([c.lon, c.lat]);
+    setPin(p ? p[0] : null, p ? p[1] : null, c.name);
+    // rim
+    ctx.beginPath(); path({ type: "Sphere" }); ctx.strokeStyle = "rgba(160,200,235,0.35)"; ctx.lineWidth = 1; ctx.stroke();
+  }
+  function drawFallback() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fillStyle = "#1c3c55"; ctx.fill();
+  }
+
+  /* ---------- Weather (Open-Meteo, no key) ---------- */
+  const WX = {
+    0: "晴", 1: "大致晴朗", 2: "多云", 3: "阴", 45: "雾", 48: "冻雾",
+    51: "小毛毛雨", 53: "毛毛雨", 55: "大毛毛雨", 56: "冻毛毛雨", 57: "冻毛毛雨",
+    61: "小雨", 63: "中雨", 65: "大雨", 66: "冻雨", 67: "冻雨",
+    71: "小雪", 73: "中雪", 75: "大雪", 77: "雪粒", 80: "阵雨", 81: "阵雨", 82: "强阵雨",
+    85: "阵雪", 86: "强阵雪", 95: "雷阵雨", 96: "雷阵雨伴冰雹", 99: "强雷阵雨伴冰雹"
+  };
+  let wxTimer = null;
+  async function loadWeather() {
+    clearTimeout(wxTimer);
+    const c = city();
+    const url = "https://api.open-meteo.com/v1/forecast?latitude=" + c.lat + "&longitude=" + c.lon +
+      "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code" +
+      "&hourly=precipitation_probability,weather_code" +
+      "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max" +
+      "&timezone=auto&past_days=1&forecast_days=2";
+    try {
+      const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 12000);
+      const r = await fetch(url, { signal: ctrl.signal }); clearTimeout(to);
+      if (!r.ok) throw new Error("http " + r.status);
+      const j = await r.json(), cur = j.current, d = j.daily;
+      $("temp").innerHTML = Math.round(cur.temperature_2m) + "<sup>°C</sup>";
+      $("cond").textContent = WX[cur.weather_code] || "—";
+      const hi = Math.round(d.temperature_2m_max[1]), lo = Math.round(d.temperature_2m_min[1]);
+      const pp = d.precipitation_probability_max && d.precipitation_probability_max[1];
+      $("wxmeta").textContent = lo + "° / " + hi + "°  体感 " + Math.round(cur.apparent_temperature) + "°  湿度 " + cur.relative_humidity_2m + "%" + (pp != null ? "  降水 " + pp + "%" : "");
+      $("wxnote").hidden = true;
+      const sum = summarize(j);
+      wxSummary = sum; renderMsg(new Date());
+      wxTimer = setTimeout(loadWeather, 15 * 60000);
+    } catch (e) {
+      $("cond").textContent = "天气暂时无法获取";
+      $("temp").innerHTML = "--<sup>°C</sup>";
+      $("wxmeta").textContent = "";
+      wxSummary = ""; renderMsg(new Date());
+      $("wxnote").hidden = false;
+      $("wxnote").textContent = "当前网页环境不允许联网获取天气时也会这样；5 分钟后自动重试。";
+      wxTimer = setTimeout(loadWeather, 5 * 60000);
+    }
+  }
+
+  /* ---------- One- or two-sentence weather overview ---------- */
+  const SNOW = new Set([71, 73, 75, 77, 85, 86]);
+  const STORM = new Set([95, 96, 99]);
+  function partOfDay(h) {
+    if (h < 6) return "凌晨"; if (h < 11) return "上午"; if (h < 13) return "中午";
+    if (h < 17) return "下午"; if (h < 19) return "傍晚"; return "夜间";
+  }
+  function rainWindow(H, from, to) {
+    // first hour with a real chance of rain, its peak chance, and the kind of precipitation
+    let first = -1, peak = 0, kind = "雨";
+    for (let i = from; i < to && i < H.time.length; i++) {
+      const pr = H.precipitation_probability[i] || 0, code = H.weather_code[i];
+      if (pr > peak) peak = pr;
+      if (pr >= 50 && first < 0) { first = i; if (SNOW.has(code)) kind = "雪"; else if (STORM.has(code)) kind = "雷阵雨"; }
+    }
+    return { first, peak, kind };
+  }
+  function summarize(j) {
+    try {
+      const H = j.hourly, D = j.daily, cur = j.current;
+      const nowKey = cur.time.slice(0, 13) + ":00";
+      let i0 = H.time.indexOf(nowKey); if (i0 < 0) return "";
+      const hourNow = parseInt(nowKey.slice(11, 13), 10);
+      const endToday = i0 + (24 - hourNow);
+      const late = hourNow >= 20;
+      const parts = [];
+
+      // Rain / snow
+      const codeNow = cur.weather_code;
+      const wetNow = codeNow >= 51 && codeNow <= 99;
+      if (wetNow) {
+        let stop = -1;
+        for (let i = i0 + 1; i < endToday + 6 && i < H.time.length; i++) if ((H.precipitation_probability[i] || 0) < 30) { stop = i; break; }
+        const what = SNOW.has(codeNow) ? "雪" : "雨";
+        parts.push(stop > 0 ? "现在正在下" + what + "，预计" + parseInt(H.time[stop].slice(11, 13), 10) + "点前后停。" : "现在正在下" + what + "，今天会一直持续，出门记得带伞。");
+      } else if (!late) {
+        const w = rainWindow(H, i0, endToday);
+        if (w.first >= 0) parts.push("今天" + partOfDay(parseInt(H.time[w.first].slice(11, 13), 10)) + "可能有" + w.kind + "（" + w.peak + "%），出门带伞。");
+        else if (w.peak >= 25) parts.push("今天有零星降雨的可能（" + w.peak + "%），问题不大。");
+        else parts.push("今天不会下雨。");
+      } else {
+        const w = rainWindow(H, endToday, endToday + 24);
+        if (w.first >= 0) parts.push("明天" + partOfDay(parseInt(H.time[w.first].slice(11, 13), 10)) + "可能有" + w.kind + "（" + w.peak + "%），记得带伞。");
+        else parts.push("明天不会下雨。");
+      }
+
+      // Temperature trend (daily index 0 = yesterday, 1 = today, 2 = tomorrow)
+      const y = D.temperature_2m_max[0], t = D.temperature_2m_max[1], tm = D.temperature_2m_max[2];
+      const tLo = D.temperature_2m_min[1], tmLo = D.temperature_2m_min[2];
+      const dTom = tm - t, dToday = t - y;
+      if (late || Math.abs(dTom) >= 4) {
+        if (dTom <= -3) parts.push("明天降温约 " + Math.round(-dTom) + "°，最低 " + Math.round(tmLo) + "°，注意添衣。");
+        else if (dTom >= 3) parts.push("明天升温约 " + Math.round(dTom) + "°，最高 " + Math.round(tm) + "°。");
+        else parts.push("明天气温和今天差不多，" + Math.round(tmLo) + "° 到 " + Math.round(tm) + "°。");
+      } else if (dToday <= -3) parts.push("比昨天降温约 " + Math.round(-dToday) + "°，注意保暖。");
+      else if (dToday >= 3) parts.push("比昨天暖和约 " + Math.round(dToday) + "°。");
+      else if (t - tLo >= 10) parts.push("早晚温差大，" + Math.round(tLo) + "° 到 " + Math.round(t) + "°。");
+      else parts.push("气温和昨天差不多。");
+      const plain = parts[parts.length - 1] === "气温和昨天差不多。";
+
+      // Strong wind, only when there is room
+      const wind = D.wind_speed_10m_max[late ? 2 : 1];
+      if (wind >= 39 && (plain || parts.length < 2)) { if (plain) parts.pop(); parts.push((late ? "明天" : "今天") + "风比较大，体感会偏冷。"); }
+      return parts.join("");
+    } catch (e) { return ""; }
+  }
+
+  let wxSummary = "";
+  function greeting(d) {
+    const m = d.getHours() * 60 + d.getMinutes();
+    const nm = "袁石";
+    if (m < 5 * 60 || m >= 23 * 60) return "夜深了，" + nm + "，早点休息。";
+    if (m < 9 * 60) return "早上好，" + nm + "。";
+    if (m < 11 * 60 + 30) return "上午好，" + nm + "。";
+    if (m < 13 * 60 + 30) return "中午好，" + nm + "。";
+    if (m < 18 * 60) return "下午好，" + nm + "。";
+    return "晚上好，" + nm + "。";
+  }
+  function renderMsg(now) {
+    const esc = t => t.replace(/[&<>]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[ch]);
+    $("msg").innerHTML = greeting(now) + (wxSummary ? esc(wxSummary) : "");
+  }
+
+  /* ---------- Tick ---------- */
+  let lastMin = -1;
+  function tick() {
+    const now = new Date();
+    $("hh").textContent = pad(now.getHours());
+    $("mm").textContent = pad(now.getMinutes());
+    $("ss").textContent = pad(now.getSeconds());
+    $("colon").classList.toggle("dim", now.getSeconds() % 2 === 1);
+    if (now.getMinutes() !== lastMin) {
+      lastMin = now.getMinutes();
+      $("date").textContent = now.getFullYear() + "年" + (now.getMonth() + 1) + "月" + now.getDate() + "日  星期" + "日一二三四五六"[now.getDay()];
+      $("lunar").textContent = lunar(now);
+      renderMsg(now);
+      const c = city(), st = sunTimes(now, c), s = sunPos(now);
+      $("rise").textContent = fmtHM(st.rise);
+      $("set").textContent = fmtHM(st.set);
+      const gNow = now;
+      const capParts = [];
+      if (nightFail && TEX.day) capParts.push("夜间灯光未加载");
+      $("cap").textContent = capParts.join("  ·  ");
+      drawGlobe(gNow);
+      applyDim(now);
+    }
+    setTimeout(tick, 1000 - (Date.now() % 1000) + 5);
+  }
+
+  function applyDim(now) {
+    const m = now.getHours() * 60 + now.getMinutes();
+    const night = m >= 23 * 60 || m < 6 * 60 + 30;
+    $("dimmer").style.opacity = autoDim && night ? "0.55" : "0";
+  }
+
+  /* ---------- Settings ---------- */
+  const sel = $("citySel");
+  { const o = document.createElement("option"); o.value = "auto"; o.textContent = "自动定位（当前位置）"; sel.appendChild(o); }
+  CITIES.forEach((c, i) => { const o = document.createElement("option"); o.value = i; o.textContent = c[0]; sel.appendChild(o); });
+  function cityLabel() { return cityIdx !== "auto" ? city().name : here ? "当前位置" : hereErr ? "定位失败 · 显示上海" : "定位中…"; }
+  function locate() {
+    clearTimeout(locTimer);
+    if (cityIdx !== "auto") return;
+    if (!navigator.geolocation) { hereErr = true; $("cityBtn").textContent = cityLabel(); return; }
+    navigator.geolocation.getCurrentPosition(pos => {
+      const moved = !here || Math.abs(here.lat - pos.coords.latitude) > 0.05 || Math.abs(here.lon - pos.coords.longitude) > 0.05;
+      here = { lat: +pos.coords.latitude.toFixed(3), lon: +pos.coords.longitude.toFixed(3) }; hereErr = false;
+      $("cityBtn").textContent = cityLabel();
+      if (moved) { lastMin = -1; loadWeather(); }
+    }, () => { hereErr = true; $("cityBtn").textContent = cityLabel(); lastMin = -1; },
+    { enableHighAccuracy: false, timeout: 20000, maximumAge: 30 * 60000 });
+    locTimer = setTimeout(locate, 30 * 60000);
+  }
+  function openSheet() { sel.value = cityIdx; $("dimChk").checked = autoDim; $("sheet").hidden = false; sel.focus(); }
+  function closeSheet() {
+    $("sheet").hidden = true;
+    const ni = sel.value === "auto" ? "auto" : parseInt(sel.value, 10);
+    autoDim = $("dimChk").checked; store.set("dim", autoDim);
+    if (ni !== cityIdx) { cityIdx = ni; store.set("city", cityIdx); $("cityBtn").textContent = cityLabel(); lastMin = -1; loadWeather(); locate(); }
+    applyDim(new Date());
+  }
+  $("cityBtn").textContent = cityLabel();
+  $("cityBtn").addEventListener("click", openSheet);
+  $("doneBtn").addEventListener("click", closeSheet);
+  $("sheet").addEventListener("click", e => { if (e.target === $("sheet")) closeSheet(); });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && !$("sheet").hidden) closeSheet();
+    else if ((e.key === "c" || e.key === "C") && $("sheet").hidden) openSheet();
+  });
+
+  /* ---------- Keep the screen awake where allowed ---------- */
+  let lock = null;
+  async function wake() {
+    try { if ("wakeLock" in navigator && !lock) { lock = await navigator.wakeLock.request("screen"); lock.addEventListener("release", () => { lock = null; }); } } catch (e) {}
+  }
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") wake(); });
+  document.addEventListener("click", wake);
+
+  land = loadLand();
+  window.addEventListener("resize", resize);
+  resize();
+  tick();
+  loadWeather();
+  loadSatellite();
+  locate();
+  wake();
+})();
+</script>
+
+</body></html>

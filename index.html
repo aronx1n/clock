@@ -40,6 +40,7 @@ body {
 }
 .globe-wrap { position: relative; height: 100%; min-height: 0; display: flex; align-items: center; justify-content: center; }
 canvas#globe { width: 100%; height: 100%; display: block; }
+canvas#orbit { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .globe-cap {
   position: absolute; left: 0; right: 0; bottom: 0;
   text-align: center; font-family: var(--f-mono); font-size: 12px; letter-spacing: .14em;
@@ -116,6 +117,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
 <main class="stage">
   <div class="globe-wrap">
     <canvas id="globe" aria-label="实时地球昼夜示意"></canvas>
+    <canvas id="orbit" aria-hidden="true"></canvas>
     <div class="pin" id="pin" hidden><span class="ring"></span><span class="dot"></span><span class="name" id="pinName"></span></div>
     <div class="globe-cap" id="cap"></div>
   </div>
@@ -163,9 +165,10 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
   window.echarts = { registerMap: function (name, geo) { window.__worldGeo = geo; } };
 </script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@4.9.0/map/js/world.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/5.0.0/satellite.min.js"></script>
 <script>
 (function () {
-  const VERSION = "2026-10-28.2";
+  const VERSION = "2026-10-28.3";
   const $ = id => document.getElementById(id);
   const RAD = Math.PI / 180, DEG = 180 / Math.PI;
 
@@ -423,13 +426,107 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
   }
 
   let W = 0, H = 0, R = 0, cx = 0, cy = 0, dpr = 1;
+
+  /* ---------- Space stations (ISS and Tiangong), positions from public orbit data ---------- */
+  const orbit = $("orbit"), octx = orbit.getContext("2d");
+  const STATIONS = [
+    { id: 48274, name: "天宫空间站",
+      tle: ["1 48274U 21035A   26299.76014724  .00007428  00000+0  89206-4 0  9994",
+            "2 48274  41.4690 242.6948 0003157 219.3970 140.6639 15.61173988313716"] },
+    { id: 25544, name: "国际空间站",
+      tle: ["1 25544U 98067A   26300.17675415  .00005704  00000+0  11132-3 0  9993",
+            "2 25544  51.6336   6.9404 0006948 314.9066  45.1358 15.49073103592213"] }
+  ];
+  function makeSat(st) { try { st.rec = satellite.twoline2satrec(st.tle[0], st.tle[1]); } catch (e) { st.rec = null; } }
+  function loadStationsTLE() {
+    if (typeof satellite === "undefined") return;
+    STATIONS.forEach(st => {
+      const cached = store.get("tle" + st.id, null);
+      if (cached && cached.l1 && cached.at > 0) st.tle = [cached.l1, cached.l2];
+      makeSat(st);
+      const fresh = cached && Date.now() - cached.at < 12 * 3600000;
+      if (fresh) return;
+      fetch("https://celestrak.org/NORAD/elements/gp.php?CATNR=" + st.id + "&FORMAT=TLE")
+        .then(r => r.ok ? r.text() : "")
+        .then(t => {
+          const L = t.split(/\r?\n/).map(x => x.trim()).filter(x => /^[12] /.test(x));
+          if (L.length >= 2) { st.tle = [L[0], L[1]]; makeSat(st); store.set("tle" + st.id, { l1: L[0], l2: L[1], at: Date.now() }); drawStations(); }
+        }).catch(() => {});
+    });
+    setTimeout(loadStationsTLE, 6 * 3600000);
+  }
+  // Earth-fixed unit vector and radius (in Earth radii) of a station at a given time
+  function stationVec(rec, t) {
+    const pv = satellite.propagate(rec, t);
+    if (!pv || !pv.position) return null;
+    const g = satellite.eciToGeodetic(pv.position, satellite.gstime(t));
+    const la = g.latitude, lo = g.longitude, k = 1 + g.height / 6371;
+    return [Math.cos(la) * Math.cos(lo) * k, Math.cos(la) * Math.sin(lo) * k, Math.sin(la) * k];
+  }
+  function viewBasis() {
+    const c = city(), tilt = Math.max(-35, Math.min(35, c.lat * 0.75));
+    const la = tilt * RAD, lo = c.lon * RAD;
+    return {
+      C: [Math.cos(la) * Math.cos(lo), Math.cos(la) * Math.sin(lo), Math.sin(la)],
+      E: [-Math.sin(lo), Math.cos(lo), 0],
+      N: [-Math.sin(la) * Math.cos(lo), -Math.sin(la) * Math.sin(lo), Math.cos(la)]
+    };
+  }
+  // screen position, or null when the station is behind the Earth
+  function toScreen(P, B) {
+    const z = P[0] * B.C[0] + P[1] * B.C[1] + P[2] * B.C[2];
+    const u = P[0] * B.E[0] + P[1] * B.E[1];
+    const v = P[0] * B.N[0] + P[1] * B.N[1] + P[2] * B.N[2];
+    if (z < 0 && u * u + v * v < 1) return null;
+    return [cx + R * u, cy - R * v];
+  }
+  function drawStations() {
+    octx.setTransform(1, 0, 0, 1, 0, 0);
+    octx.clearRect(0, 0, orbit.width, orbit.height);
+    if (typeof satellite === "undefined" || !R) return;
+    octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const now = Date.now(), B = viewBasis();
+    STATIONS.forEach(st => {
+      if (!st.rec) return;
+      // fading trail: the last 12 minutes of the ground track
+      let prev = null;
+      for (let m = 12; m >= 0; m -= 0.5) {
+        const P = stationVec(st.rec, new Date(now - m * 60000));
+        const p = P && toScreen(P, B);
+        if (p && prev) {
+          octx.beginPath(); octx.moveTo(prev[0], prev[1]); octx.lineTo(p[0], p[1]);
+          octx.strokeStyle = "rgba(235,230,218," + (0.45 * (1 - m / 12)).toFixed(3) + ")";
+          octx.lineWidth = 1.2; octx.stroke();
+        }
+        prev = p;
+      }
+      const P = stationVec(st.rec, new Date(now));
+      const p = P && toScreen(P, B);
+      if (!p) return;
+      const glow = octx.createRadialGradient(p[0], p[1], 0, p[0], p[1], 9);
+      glow.addColorStop(0, "rgba(255,255,255,0.55)"); glow.addColorStop(1, "rgba(255,255,255,0)");
+      octx.fillStyle = glow; octx.beginPath(); octx.arc(p[0], p[1], 9, 0, Math.PI * 2); octx.fill();
+      octx.fillStyle = "#ffffff"; octx.beginPath(); octx.arc(p[0], p[1], 2.6, 0, Math.PI * 2); octx.fill();
+      octx.font = "14px -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif";
+      octx.textBaseline = "middle";
+      octx.shadowColor = "rgba(0,0,0,0.9)"; octx.shadowBlur = 4;
+      octx.fillStyle = "rgba(235,230,218,0.92)";
+      const tw = octx.measureText(st.name).width;
+      const left = p[0] + 10 + tw > W - 4;           // keep the label on screen
+      octx.fillText(st.name, left ? p[0] - 10 - tw : p[0] + 10, p[1]);
+      octx.shadowBlur = 0;
+    });
+  }
+  setInterval(() => { if (document.visibilityState === "visible") drawStations(); }, 2000);
   function resize() {
     const box = canvas.parentElement.getBoundingClientRect();
     dpr = Math.min(window.devicePixelRatio || 1, 2);
     W = Math.max(10, box.width); H = Math.max(10, box.height);
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
     R = Math.min(W, H) * 0.44; cx = W / 2; cy = H / 2 - 6;
+    orbit.width = canvas.width; orbit.height = canvas.height;
     drawGlobe(new Date());
+    drawStations();
   }
 
   function drawGlobe(now) {
@@ -637,6 +734,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
       if (nightFail && TEX.day) capParts.push("夜间灯光未加载");
       $("cap").textContent = capParts.join("  ·  ");
       drawGlobe(gNow);
+      drawStations();
     }
     setTimeout(tick, 1000 - (Date.now() % 1000) + 5);
   }
@@ -720,6 +818,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
   tick();
   loadWeather();
   loadSatellite();
+  loadStationsTLE();
   locate();
   wake();
 })();

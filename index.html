@@ -165,7 +165,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
 <script src="https://cdn.jsdelivr.net/npm/echarts@4.9.0/map/js/world.js"></script>
 <script>
 (function () {
-  const VERSION = "2026-10-28.1";
+  const VERSION = "2026-10-28.2";
   const $ = id => document.getElementById(id);
   const RAD = Math.PI / 180, DEG = 180 / Math.PI;
 
@@ -185,7 +185,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
   let cityIdx = store.get("city", "auto"); if (cityIdx !== "auto" && !CITIES[cityIdx]) cityIdx = "auto";
   let here = null, hereErr = false, locTimer = null;
   const city = () => cityIdx === "auto"
-    ? (here ? { name: "当前位置", lat: here.lat, lon: here.lon } : { name: "上海", lat: 31.23, lon: 121.47 })
+    ? (here ? { name: here.name, lat: here.lat, lon: here.lon } : { name: "上海", lat: 31.23, lon: 121.47 })
     : { name: CITIES[cityIdx][0], lat: CITIES[cityIdx][1], lon: CITIES[cityIdx][2] };
 
   /* ---------- Sun position (low-precision solar ephemeris, ~0.01°) ---------- */
@@ -645,16 +645,35 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
   const sel = $("citySel");
   { const o = document.createElement("option"); o.value = "auto"; o.textContent = "自动定位（当前位置）"; sel.appendChild(o); }
   CITIES.forEach((c, i) => { const o = document.createElement("option"); o.value = i; o.textContent = c[0]; sel.appendChild(o); });
-  function cityLabel() { return cityIdx !== "auto" ? city().name : here ? "当前位置" : hereErr ? "定位失败 · 显示上海" : "定位中…"; }
+  function cityLabel() { return cityIdx !== "auto" ? city().name : here ? here.name : hereErr ? "定位失败 · 显示上海" : "定位中…"; }
+  // Name for a position: the nearest listed city first (works offline), then the real city name from a reverse lookup.
+  function nearestName(lat, lon) {
+    let best = null, bd = 1e9;
+    CITIES.forEach(c => { const d = Math.hypot(c[1] - lat, (c[2] - lon) * Math.cos(lat * RAD)); if (d < bd) { bd = d; best = c[0]; } });
+    return bd < 0.7 ? best : "当前位置";
+  }
+  async function cityName(lat, lon) {
+    try {
+      const r = await fetch("https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=" + lat + "&longitude=" + lon + "&localityLanguage=zh");
+      if (!r.ok) return null;
+      const j = await r.json();
+      let n = j.city || (j.localityInfo && (j.localityInfo.administrative || []).filter(a => a.adminLevel === 5).map(a => a.name)[0]) || j.principalSubdivision || "";
+      n = n.replace(/(特别行政区|自治州|地区|盟)$/, "");
+      if (n.length > 2) n = n.replace(/市$/, "");
+      return n || null;
+    } catch (e) { return null; }
+  }
   function locate() {
     clearTimeout(locTimer);
     if (cityIdx !== "auto") return;
     if (!navigator.geolocation) { hereErr = true; $("cityBtn").textContent = cityLabel(); return; }
     navigator.geolocation.getCurrentPosition(pos => {
       const moved = !here || Math.abs(here.lat - pos.coords.latitude) > 0.05 || Math.abs(here.lon - pos.coords.longitude) > 0.05;
-      here = { lat: +pos.coords.latitude.toFixed(3), lon: +pos.coords.longitude.toFixed(3) }; hereErr = false;
+      const lat = +pos.coords.latitude.toFixed(3), lon = +pos.coords.longitude.toFixed(3);
+      here = { lat, lon, name: moved || !here ? nearestName(lat, lon) : here.name }; hereErr = false;
       $("cityBtn").textContent = cityLabel();
       if (moved) { lastMin = -1; loadWeather(); }
+      cityName(lat, lon).then(n => { if (n && here && here.lat === lat && here.lon === lon) { here.name = n; $("cityBtn").textContent = cityLabel(); lastMin = -1; } });
     }, () => { hereErr = true; $("cityBtn").textContent = cityLabel(); lastMin = -1; },
     { enableHighAccuracy: false, timeout: 20000, maximumAge: 30 * 60000 });
     locTimer = setTimeout(locate, 30 * 60000);

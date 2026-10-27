@@ -81,6 +81,17 @@ button.city {
   border: 1px solid var(--faint); border-radius: 999px; padding: 5px 12px; cursor: pointer;
 }
 button.city:hover { border-color: var(--muted); }
+.reload {
+  position: fixed; z-index: 15;
+  right: calc(10px + env(safe-area-inset-right, 0px)); bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%;
+  background: transparent; color: var(--muted); opacity: .4; cursor: pointer;
+  display: grid; place-items: center; transition: opacity .2s;
+}
+.reload:hover, .reload:active { opacity: .9; }
+.reload svg { width: 17px; height: 17px; }
+.reload.spin svg { animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outline-offset: 2px; }
 
 .sheet {
@@ -147,6 +158,8 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
   </section>
 </main>
 
+<button class="reload" id="reloadBtn" type="button" aria-label="刷新页面"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>
+
 <div class="sheet" id="sheet" hidden>
   <div class="box" role="dialog" aria-labelledby="sheetTitle">
     <h2 id="sheetTitle">设置</h2>
@@ -168,7 +181,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
 <script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/5.0.0/satellite.min.js"></script>
 <script>
 (function () {
-  const VERSION = "2026-10-28.6";
+  const VERSION = "2026-10-28.7";
   const $ = id => document.getElementById(id);
   const RAD = Math.PI / 180, DEG = 180 / Math.PI;
 
@@ -863,6 +876,11 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
   }
   $("cityBtn").textContent = cityLabel();
   $("cityBtn").addEventListener("click", openSheet);
+  $("reloadBtn").addEventListener("click", () => {
+    $("reloadBtn").classList.add("spin");
+    const u = location.href.split("#")[0].split("?")[0];
+    location.replace(u + "?r=" + Date.now());
+  });
   $("doneBtn").addEventListener("click", closeSheet);
   $("sheet").addEventListener("click", e => { if (e.target === $("sheet")) closeSheet(); });
   document.addEventListener("keydown", e => {

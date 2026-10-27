@@ -108,7 +108,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
 .pin .dot, .pin .ring { position: absolute; left: -5px; top: -5px; width: 10px; height: 10px; border-radius: 50%; }
 .pin .dot { background: var(--live); box-shadow: 0 0 10px 3px rgba(61,220,132,.65); animation: breathe 2.4s ease-in-out infinite; }
 .pin .ring { border: 1.5px solid var(--live); animation: ripple 2.4s ease-out infinite; }
-.pin .name { position: absolute; left: 14px; top: -10px; font-size: 15px; color: var(--fg); white-space: nowrap; text-shadow: 0 0 4px #000, 0 0 2px #000; }
+.pin .name { position: absolute; left: 14px; top: -11px; font-size: 16px; font-weight: 600; color: #fff; white-space: nowrap; text-shadow: 0 0 6px rgba(0,0,0,.95), 0 0 2px #000; }
 @keyframes breathe { 0%, 100% { transform: scale(.8); opacity: .8; } 50% { transform: scale(1.2); opacity: 1; } }
 @keyframes ripple { 0% { transform: scale(1); opacity: .9; } 100% { transform: scale(3.8); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .time .colon { transition: none; } .pin .dot, .pin .ring { animation: none; } }
@@ -168,7 +168,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
 <script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/5.0.0/satellite.min.js"></script>
 <script>
 (function () {
-  const VERSION = "2026-10-28.5";
+  const VERSION = "2026-10-28.6";
   const $ = id => document.getElementById(id);
   const RAD = Math.PI / 180, DEG = 180 / Math.PI;
 
@@ -515,16 +515,6 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
     STATIONS.forEach(st => {
       if (!st.rec || !st.path) return;
       const col = st.color;
-      // whole orbit as a dashed line; the dashes creep forward along the direction of travel
-      octx.save();
-      octx.setLineDash([4, 5]);
-      octx.lineDashOffset = reduceMotion ? 0 : -((now / 1000) * 2.5 % 9);
-      octx.lineWidth = 1.1;
-      octx.strokeStyle = "rgba(" + col + ",0.32)";
-      visibleRuns(st, B, -PERIOD_MIN, PERIOD_MIN).forEach(run => {
-        octx.beginPath(); run.forEach((p, i) => i ? octx.lineTo(p[0], p[1]) : octx.moveTo(p[0], p[1])); octx.stroke();
-      });
-      octx.restore();
       // the last 12 minutes as a solid trail that fades out behind the station
       visibleRuns(st, B, sinceMin - 12, sinceMin).forEach(run => {
         for (let i = 1; i < run.length; i++) {
@@ -544,12 +534,19 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
         octx.beginPath(); octx.moveTo(-3, -3.5); octx.lineTo(1.5, 0); octx.lineTo(-3, 3.5);
         octx.strokeStyle = "rgba(" + col + ",0.9)"; octx.lineWidth = 1.4; octx.stroke(); octx.restore();
       }
-      // station: soft glow, ring and centre dot
-      const glow = octx.createRadialGradient(p[0], p[1], 0, p[0], p[1], 10);
-      glow.addColorStop(0, "rgba(" + col + ",0.5)"); glow.addColorStop(1, "rgba(" + col + ",0)");
-      octx.fillStyle = glow; octx.beginPath(); octx.arc(p[0], p[1], 10, 0, Math.PI * 2); octx.fill();
-      octx.beginPath(); octx.arc(p[0], p[1], 4.5, 0, Math.PI * 2); octx.strokeStyle = "rgba(" + col + ",0.95)"; octx.lineWidth = 1.2; octx.stroke();
-      octx.beginPath(); octx.arc(p[0], p[1], 1.8, 0, Math.PI * 2); octx.fillStyle = "#fff"; octx.fill();
+      // station: breathing glow and dot, plus a ripple ring that keeps spreading out (a "live" marker)
+      const ph = reduceMotion ? 0.5 : ((now + (st.id % 997)) % 2400) / 2400;
+      const breath = reduceMotion ? 0.5 : 0.5 - 0.5 * Math.cos(ph * Math.PI * 2);
+      const gr = 8 + 4 * breath;
+      const glow = octx.createRadialGradient(p[0], p[1], 0, p[0], p[1], gr);
+      glow.addColorStop(0, "rgba(" + col + "," + (0.35 + 0.3 * breath).toFixed(3) + ")"); glow.addColorStop(1, "rgba(" + col + ",0)");
+      octx.fillStyle = glow; octx.beginPath(); octx.arc(p[0], p[1], gr, 0, Math.PI * 2); octx.fill();
+      if (!reduceMotion) {
+        octx.beginPath(); octx.arc(p[0], p[1], 3.5 + 11 * ph, 0, Math.PI * 2);
+        octx.strokeStyle = "rgba(" + col + "," + (0.7 * (1 - ph)).toFixed(3) + ")"; octx.lineWidth = 1.2; octx.stroke();
+      }
+      octx.beginPath(); octx.arc(p[0], p[1], 2.4 + 0.8 * breath, 0, Math.PI * 2); octx.fillStyle = "rgba(" + col + ",1)"; octx.fill();
+      octx.beginPath(); octx.arc(p[0], p[1], 1.1, 0, Math.PI * 2); octx.fillStyle = "#fff"; octx.fill();
       marks.push({ st, p });
     });
     drawCallouts(marks);
@@ -557,7 +554,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
 
   // Elbow leader-line labels: a short diagonal out of the station, then a level line with the name sitting on it.
   function drawCallouts(marks) {
-    octx.font = "500 14px -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif";
+    octx.font = "13px -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif";
     const placed = [];
     marks.forEach(({ st, p }) => {
       const tw = octx.measureText(st.name).width;
@@ -582,12 +579,10 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
       octx.moveTo(p[0] + sx * 5 * 0.57, p[1] + sy * 5 * 0.82);
       octx.lineTo(b.ex, b.ey);
       octx.lineTo(sx > 0 ? b.x1 : b.x0, b.ey);
-      octx.strokeStyle = "rgba(" + col + ",0.8)"; octx.lineWidth = 1; octx.stroke();
-      // small tick at the end of the shelf
-      octx.beginPath(); octx.arc(sx > 0 ? b.x1 : b.x0, b.ey, 1.4, 0, Math.PI * 2); octx.fillStyle = "rgba(" + col + ",0.9)"; octx.fill();
+      octx.strokeStyle = "rgba(" + col + ",0.45)"; octx.lineWidth = 1; octx.stroke();
       // name, sitting on (or hanging under) the shelf
       octx.shadowColor = "rgba(0,0,0,0.85)"; octx.shadowBlur = 4;
-      octx.fillStyle = "rgba(235,230,218,0.95)";
+      octx.fillStyle = "rgba(235,230,218,0.58)";
       octx.textBaseline = sy < 0 ? "bottom" : "top";
       octx.fillText(st.name, (sx > 0 ? b.ex + 5 : b.x0 + 5), sy < 0 ? b.ey - 4 : b.ey + 4);
       octx.shadowBlur = 0;

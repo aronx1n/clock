@@ -89,6 +89,8 @@ button.city:hover { border-color: var(--muted); }
   display: grid; place-items: center; transition: opacity .2s;
 }
 .reload:hover, .reload:active { opacity: .9; }
+.reload.sat { right: calc(50px + env(safe-area-inset-right, 0px)); }
+.reload.sat.on { color: var(--fg); opacity: .6; }
 .reload svg { width: 17px; height: 17px; }
 .reload.spin svg { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -158,6 +160,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
   </section>
 </main>
 
+<button class="reload sat" id="satBtn" type="button" aria-label="显示空间站" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M9 12H3M21 12h-6M5 9v6M19 9v6M12 9V6M12 18v-3"/></svg></button>
 <button class="reload" id="reloadBtn" type="button" aria-label="刷新页面"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>
 
 <div class="sheet" id="sheet" hidden>
@@ -181,7 +184,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
 <script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/5.0.0/satellite.min.js"></script>
 <script>
 (function () {
-  const VERSION = "2026-10-28.7";
+  const VERSION = "2026-10-28.8";
   const $ = id => document.getElementById(id);
   const RAD = Math.PI / 180, DEG = 180 / Math.PI;
 
@@ -442,6 +445,13 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
 
   /* ---------- Space stations (ISS and Tiangong), positions from public orbit data ---------- */
   const orbit = $("orbit"), octx = orbit.getContext("2d");
+  let showStations = store.get("stations", true);
+  function applyStationsToggle() {
+    $("satBtn").classList.toggle("on", showStations);
+    $("satBtn").setAttribute("aria-pressed", String(showStations));
+    $("satBtn").setAttribute("aria-label", showStations ? "隐藏空间站" : "显示空间站");
+    drawStations();
+  }
   const STATIONS = [
     { id: 48274, name: "天宫空间站", color: "255,207,122",
       tle: ["1 48274U 21035A   26299.76014724  .00007428  00000+0  89206-4 0  9994",
@@ -519,7 +529,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
   function drawStations() {
     octx.setTransform(1, 0, 0, 1, 0, 0);
     octx.clearRect(0, 0, orbit.width, orbit.height);
-    if (typeof satellite === "undefined" || !R) return;
+    if (typeof satellite === "undefined" || !R || !showStations) return;
     const now = Date.now();
     if (now - pathsAt > 30000 || STATIONS.some(st => st.rec && !(st.path && st.path.length))) buildPaths();
     octx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -528,14 +538,6 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
     STATIONS.forEach(st => {
       if (!st.rec || !st.path) return;
       const col = st.color;
-      // the last 12 minutes as a solid trail that fades out behind the station
-      visibleRuns(st, B, sinceMin - 12, sinceMin).forEach(run => {
-        for (let i = 1; i < run.length; i++) {
-          const f = i / run.length;
-          octx.beginPath(); octx.moveTo(run[i - 1][0], run[i - 1][1]); octx.lineTo(run[i][0], run[i][1]);
-          octx.strokeStyle = "rgba(" + col + "," + (0.75 * f).toFixed(3) + ")"; octx.lineWidth = 1.6; octx.stroke();
-        }
-      });
       const P = stationVec(st.rec, new Date(now));
       const p = P && toScreen(P, B);
       if (!p) return;
@@ -876,6 +878,8 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
   }
   $("cityBtn").textContent = cityLabel();
   $("cityBtn").addEventListener("click", openSheet);
+  $("satBtn").addEventListener("click", () => { showStations = !showStations; store.set("stations", showStations); applyStationsToggle(); });
+  applyStationsToggle();
   $("reloadBtn").addEventListener("click", () => {
     $("reloadBtn").classList.add("spin");
     const u = location.href.split("#")[0].split("?")[0];

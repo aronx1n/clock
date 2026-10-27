@@ -168,7 +168,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
 <script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/5.0.0/satellite.min.js"></script>
 <script>
 (function () {
-  const VERSION = "2026-10-28.3";
+  const VERSION = "2026-10-28.4";
   const $ = id => document.getElementById(id);
   const RAD = Math.PI / 180, DEG = 180 / Math.PI;
 
@@ -430,14 +430,14 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
   /* ---------- Space stations (ISS and Tiangong), positions from public orbit data ---------- */
   const orbit = $("orbit"), octx = orbit.getContext("2d");
   const STATIONS = [
-    { id: 48274, name: "天宫空间站",
+    { id: 48274, name: "天宫空间站", color: "255,207,122",
       tle: ["1 48274U 21035A   26299.76014724  .00007428  00000+0  89206-4 0  9994",
             "2 48274  41.4690 242.6948 0003157 219.3970 140.6639 15.61173988313716"] },
-    { id: 25544, name: "国际空间站",
+    { id: 25544, name: "国际空间站", color: "150,205,255",
       tle: ["1 25544U 98067A   26300.17675415  .00005704  00000+0  11132-3 0  9993",
             "2 25544  51.6336   6.9404 0006948 314.9066  45.1358 15.49073103592213"] }
   ];
-  function makeSat(st) { try { st.rec = satellite.twoline2satrec(st.tle[0], st.tle[1]); } catch (e) { st.rec = null; } }
+  function makeSat(st) { try { st.rec = satellite.twoline2satrec(st.tle[0], st.tle[1]); } catch (e) { st.rec = null; } pathsAt = 0; }
   function loadStationsTLE() {
     if (typeof satellite === "undefined") return;
     STATIONS.forEach(st => {
@@ -450,7 +450,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
         .then(r => r.ok ? r.text() : "")
         .then(t => {
           const L = t.split(/\r?\n/).map(x => x.trim()).filter(x => /^[12] /.test(x));
-          if (L.length >= 2) { st.tle = [L[0], L[1]]; makeSat(st); store.set("tle" + st.id, { l1: L[0], l2: L[1], at: Date.now() }); drawStations(); }
+          if (L.length >= 2) { st.tle = [L[0], L[1]]; makeSat(st); pathsAt = 0; store.set("tle" + st.id, { l1: L[0], l2: L[1], at: Date.now() }); drawStations(); }
         }).catch(() => {});
     });
     setTimeout(loadStationsTLE, 6 * 3600000);
@@ -480,44 +480,128 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
     if (z < 0 && u * u + v * v < 1) return null;
     return [cx + R * u, cy - R * v];
   }
+  // One full orbit (about 92 minutes) sampled every 30 s, centred on now; rebuilt every 30 s.
+  const PERIOD_MIN = 46, STEP_MIN = 0.5;
+  let pathsAt = 0;
+  function buildPaths() {
+    const now = Date.now();
+    STATIONS.forEach(st => {
+      st.path = [];
+      if (!st.rec) return;
+      for (let m = -PERIOD_MIN; m <= PERIOD_MIN; m += STEP_MIN) st.path.push({ m, P: stationVec(st.rec, new Date(now + m * 60000)) });
+    });
+    pathsAt = now;
+  }
+  // Polyline pieces of the path that are on the visible side, between minutes [from, to] relative to pathsAt
+  function visibleRuns(st, B, from, to) {
+    const runs = []; let run = null;
+    for (const pt of st.path) {
+      if (pt.m < from || pt.m > to) continue;
+      const p = pt.P && toScreen(pt.P, B);
+      if (p) { if (!run) { run = []; runs.push(run); } run.push(p); } else run = null;
+    }
+    return runs;
+  }
+  const reduceMotion = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
   function drawStations() {
     octx.setTransform(1, 0, 0, 1, 0, 0);
     octx.clearRect(0, 0, orbit.width, orbit.height);
     if (typeof satellite === "undefined" || !R) return;
+    const now = Date.now();
+    if (now - pathsAt > 30000 || STATIONS.some(st => st.rec && !(st.path && st.path.length))) buildPaths();
     octx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const now = Date.now(), B = viewBasis();
+    const B = viewBasis(), sinceMin = (now - pathsAt) / 60000;
+    const marks = [];
     STATIONS.forEach(st => {
-      if (!st.rec) return;
-      // fading trail: the last 12 minutes of the ground track
-      let prev = null;
-      for (let m = 12; m >= 0; m -= 0.5) {
-        const P = stationVec(st.rec, new Date(now - m * 60000));
-        const p = P && toScreen(P, B);
-        if (p && prev) {
-          octx.beginPath(); octx.moveTo(prev[0], prev[1]); octx.lineTo(p[0], p[1]);
-          octx.strokeStyle = "rgba(235,230,218," + (0.45 * (1 - m / 12)).toFixed(3) + ")";
-          octx.lineWidth = 1.2; octx.stroke();
+      if (!st.rec || !st.path) return;
+      const col = st.color;
+      // whole orbit as a dashed line; the dashes creep forward along the direction of travel
+      octx.save();
+      octx.setLineDash([4, 5]);
+      octx.lineDashOffset = reduceMotion ? 0 : -((now / 1000) * 9 % 9);
+      octx.lineWidth = 1.3;
+      octx.strokeStyle = "rgba(" + col + ",0.62)";
+      visibleRuns(st, B, -PERIOD_MIN, PERIOD_MIN).forEach(run => {
+        octx.beginPath(); run.forEach((p, i) => i ? octx.lineTo(p[0], p[1]) : octx.moveTo(p[0], p[1])); octx.stroke();
+      });
+      octx.restore();
+      // the last 12 minutes as a solid trail that fades out behind the station
+      visibleRuns(st, B, sinceMin - 12, sinceMin).forEach(run => {
+        for (let i = 1; i < run.length; i++) {
+          const f = i / run.length;
+          octx.beginPath(); octx.moveTo(run[i - 1][0], run[i - 1][1]); octx.lineTo(run[i][0], run[i][1]);
+          octx.strokeStyle = "rgba(" + col + "," + (0.75 * f).toFixed(3) + ")"; octx.lineWidth = 1.6; octx.stroke();
         }
-        prev = p;
-      }
+      });
       const P = stationVec(st.rec, new Date(now));
       const p = P && toScreen(P, B);
       if (!p) return;
-      const glow = octx.createRadialGradient(p[0], p[1], 0, p[0], p[1], 9);
-      glow.addColorStop(0, "rgba(255,255,255,0.55)"); glow.addColorStop(1, "rgba(255,255,255,0)");
-      octx.fillStyle = glow; octx.beginPath(); octx.arc(p[0], p[1], 9, 0, Math.PI * 2); octx.fill();
-      octx.fillStyle = "#ffffff"; octx.beginPath(); octx.arc(p[0], p[1], 2.6, 0, Math.PI * 2); octx.fill();
-      octx.font = "14px -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif";
-      octx.textBaseline = "middle";
-      octx.shadowColor = "rgba(0,0,0,0.9)"; octx.shadowBlur = 4;
-      octx.fillStyle = "rgba(235,230,218,0.92)";
+      // a small chevron just ahead of the station, pointing the way it is flying
+      const A = stationVec(st.rec, new Date(now + 90000)), pa = A && toScreen(A, B);
+      if (pa && reduceMotion) {
+        const ang = Math.atan2(pa[1] - p[1], pa[0] - p[0]);
+        octx.save(); octx.translate(p[0] + Math.cos(ang) * 14, p[1] + Math.sin(ang) * 14); octx.rotate(ang);
+        octx.beginPath(); octx.moveTo(-3, -3.5); octx.lineTo(1.5, 0); octx.lineTo(-3, 3.5);
+        octx.strokeStyle = "rgba(" + col + ",0.9)"; octx.lineWidth = 1.4; octx.stroke(); octx.restore();
+      }
+      // station: soft glow, ring and centre dot
+      const glow = octx.createRadialGradient(p[0], p[1], 0, p[0], p[1], 10);
+      glow.addColorStop(0, "rgba(" + col + ",0.5)"); glow.addColorStop(1, "rgba(" + col + ",0)");
+      octx.fillStyle = glow; octx.beginPath(); octx.arc(p[0], p[1], 10, 0, Math.PI * 2); octx.fill();
+      octx.beginPath(); octx.arc(p[0], p[1], 4.5, 0, Math.PI * 2); octx.strokeStyle = "rgba(" + col + ",0.95)"; octx.lineWidth = 1.2; octx.stroke();
+      octx.beginPath(); octx.arc(p[0], p[1], 1.8, 0, Math.PI * 2); octx.fillStyle = "#fff"; octx.fill();
+      marks.push({ st, p });
+    });
+    drawCallouts(marks);
+  }
+
+  // Elbow leader-line labels: a short diagonal out of the station, then a level line with the name sitting on it.
+  function drawCallouts(marks) {
+    octx.font = "500 14px -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif";
+    const placed = [];
+    marks.forEach(({ st, p }) => {
       const tw = octx.measureText(st.name).width;
-      const left = p[0] + 10 + tw > W - 4;           // keep the label on screen
-      octx.fillText(st.name, left ? p[0] - 10 - tw : p[0] + 10, p[1]);
+      const shelf = tw + 10, diag = 22;
+      let sx = p[0] >= cx ? 1 : -1;          // lean away from the globe's centre
+      let sy = p[1] > 40 + diag ? -1 : 1;    // go up unless too close to the top
+      const box = (sx, sy) => {
+        const ex = p[0] + sx * diag * 0.7, ey = p[1] + sy * diag;
+        const x0 = sx > 0 ? ex : ex - shelf, x1 = sx > 0 ? ex + shelf : ex;
+        const y0 = sy < 0 ? ey - 22 : ey, y1 = sy < 0 ? ey : ey + 22;
+        return { ex, ey, x0, x1, y0, y1 };
+      };
+      const fits = b => b.x0 >= 4 && b.x1 <= W - 4 && b.y0 >= 2 && b.y1 <= H - 2;
+      const clear = b => placed.every(o => b.x1 < o.x0 - 6 || b.x0 > o.x1 + 6 || b.y1 < o.y0 - 4 || b.y0 > o.y1 + 4);
+      let b = null;
+      for (const [ax, ay] of [[sx, sy], [sx, -sy], [-sx, sy], [-sx, -sy]]) { const c = box(ax, ay); if (fits(c) && clear(c)) { b = c; sx = ax; sy = ay; break; } }
+      if (!b) b = box(sx, sy);
+      placed.push(b);
+      const col = st.color;
+      // leader line
+      octx.beginPath();
+      octx.moveTo(p[0] + sx * 5 * 0.57, p[1] + sy * 5 * 0.82);
+      octx.lineTo(b.ex, b.ey);
+      octx.lineTo(sx > 0 ? b.x1 : b.x0, b.ey);
+      octx.strokeStyle = "rgba(" + col + ",0.8)"; octx.lineWidth = 1; octx.stroke();
+      // small tick at the end of the shelf
+      octx.beginPath(); octx.arc(sx > 0 ? b.x1 : b.x0, b.ey, 1.4, 0, Math.PI * 2); octx.fillStyle = "rgba(" + col + ",0.9)"; octx.fill();
+      // name, sitting on (or hanging under) the shelf
+      octx.shadowColor = "rgba(0,0,0,0.85)"; octx.shadowBlur = 4;
+      octx.fillStyle = "rgba(235,230,218,0.95)";
+      octx.textBaseline = sy < 0 ? "bottom" : "top";
+      octx.fillText(st.name, (sx > 0 ? b.ex + 5 : b.x0 + 5), sy < 0 ? b.ey - 4 : b.ey + 4);
       octx.shadowBlur = 0;
     });
   }
-  setInterval(() => { if (document.visibilityState === "visible") drawStations(); }, 2000);
+
+  // ~20 fps for the creeping dashes; a slow 2 s refresh when motion is reduced
+  let lastFrame = 0;
+  function frame(t) {
+    if (document.visibilityState === "visible" && t - lastFrame > 48) { lastFrame = t; drawStations(); }
+    requestAnimationFrame(frame);
+  }
+  if (reduceMotion) setInterval(() => { if (document.visibilityState === "visible") drawStations(); }, 2000);
+  else requestAnimationFrame(frame);
   function resize() {
     const box = canvas.parentElement.getBoundingClientRect();
     dpr = Math.min(window.devicePixelRatio || 1, 2);

@@ -56,7 +56,7 @@ canvas#orbit { position: absolute; inset: 0; width: 100%; height: 100%; pointer-
   font-size: clamp(116px, 21vw, 270px); line-height: .82; letter-spacing: -.01em;
   font-variant-numeric: tabular-nums; display: flex; align-items: flex-start; gap: .06em;
 }
-.time .colon { color: var(--sun); opacity: .9; transition: opacity .4s; }
+.time .colon { color: var(--sun); opacity: .9; transition: opacity .4s; position: relative; top: -.215em; }  /* this face sets ':' at x-height; centre it on the digits */
 .time .colon.dim { opacity: .25; }
 .time .sec {
   font-size: .22em; font-weight: 300; color: var(--dim); margin-top: .2em; margin-left: .12em;
@@ -70,7 +70,7 @@ canvas#orbit { position: absolute; inset: 0; width: 100%; height: 100%; pointer-
 .wx .temp sup { font-size: .36em; vertical-align: top; color: var(--dim); margin-left: 2px; }
 .wxtext { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .wx .cond { font-size: clamp(24px, 2.9vw, 32px); line-height: 1.1; }
-.wx .meta { color: var(--muted); font-size: clamp(17px, 2vw, 21px); display: flex; flex-wrap: wrap; gap: 2px 18px; font-variant-numeric: tabular-nums; }
+.wx .meta { color: var(--muted); font-size: clamp(17px, 2vw, 21px); display: grid; grid-template-columns: auto auto; justify-content: start; gap: 2px 22px; font-variant-numeric: tabular-nums; }
 .wx .meta span { white-space: nowrap; }
 .wx .meta i, .lbl { font-style: normal; color: var(--dim); margin-right: .3em; }
 .note { color: var(--muted); font-size: 15px; }
@@ -186,7 +186,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
 <script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/5.0.0/satellite.min.js"></script>
 <script>
 (function () {
-  const VERSION = "2026-10-29.3";
+  const VERSION = "2026-10-29.4";
   const $ = id => document.getElementById(id);
   const RAD = Math.PI / 180, DEG = 180 / Math.PI;
 
@@ -710,7 +710,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
       $("cond").textContent = WX[cur.weather_code] || "—";
       const hi = Math.round(d.temperature_2m_max[1]), lo = Math.round(d.temperature_2m_min[1]);
       const pp = d.precipitation_probability_max && d.precipitation_probability_max[1];
-      const metaParts = [["", lo + "–" + hi + "°"], ["体感", Math.round(cur.apparent_temperature) + "°"]];
+      const metaParts = [["", lo + "–" + hi + "°"], ["体感", Math.round(cur.apparent_temperature) + "°"], ["湿度", cur.relative_humidity_2m + "%"]];
       if (pp != null) metaParts.push(["降水", pp + "%"]);
       $("wxmeta").replaceChildren(...metaParts.map(([k, v]) => {
         const e = document.createElement("span");

@@ -8,7 +8,8 @@
 :root {
   --ink: #090c11;        /* night sky ground */
   --fg: #ebe6da;         /* warm paper white */
-  --muted: #a2a7b0;      /* blue-biased grey, bright enough to read from across a room */
+  --muted: #b3b8c0;      /* secondary text: still readable from across a room */
+  --dim: #737983;        /* labels only */
   --faint: #2a3039;      /* hairlines */
   --sun: #f0b35b;        /* sunlight amber */
   --live: #3ddc84;       /* live location */
@@ -46,10 +47,10 @@ canvas#orbit { position: absolute; inset: 0; width: 100%; height: 100%; pointer-
   text-align: center; font-family: var(--f-mono); font-size: 12px; letter-spacing: .14em;
   color: var(--muted); text-transform: uppercase;
 }
-.readout { min-width: 0; display: flex; flex-direction: column; gap: clamp(12px, 2.6vh, 26px); }
-.msg { margin: 0; font-size: clamp(22px, 2.8vw, 32px); line-height: 1.4; color: var(--muted); text-wrap: pretty; max-width: 30em; }
-.msg b { color: var(--fg); font-weight: 500; }
-.clock { display: flex; flex-direction: column; gap: clamp(10px, 2vh, 18px); }
+.readout { min-width: 0; display: flex; flex-direction: column; gap: clamp(18px, 3.2vh, 30px); }
+.msg { margin: 0; font-size: clamp(19px, 2.3vw, 27px); line-height: 1.45; color: var(--muted); }
+.msg span { display: inline-block; }
+.clock { display: flex; flex-direction: column; gap: clamp(10px, 1.8vh, 16px); }
 .time {
   font-family: var(--f-time); font-weight: 200;
   font-size: clamp(116px, 21vw, 270px); line-height: .82; letter-spacing: -.01em;
@@ -58,27 +59,27 @@ canvas#orbit { position: absolute; inset: 0; width: 100%; height: 100%; pointer-
 .time .colon { color: var(--sun); opacity: .9; transition: opacity .4s; }
 .time .colon.dim { opacity: .25; }
 .time .sec {
-  font-size: .26em; font-weight: 300; color: var(--muted); margin-top: .18em; margin-left: .1em;
+  font-size: .22em; font-weight: 300; color: var(--dim); margin-top: .2em; margin-left: .12em;
   font-variant-numeric: tabular-nums; width: 1.3em;
 }
-.date { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; font-size: clamp(22px, 2.9vw, 33px); letter-spacing: .04em; }
-.date .lunar { color: var(--muted); font-size: .8em; }
+.date { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; font-size: clamp(22px, 2.9vw, 33px); letter-spacing: .03em; font-variant-numeric: tabular-nums; }
+.date .lunar { color: var(--muted); font-size: .72em; letter-spacing: .06em; }
 .rule { height: 1px; background: var(--faint); }
-.wx { display: flex; align-items: center; gap: clamp(14px, 2.4vw, 26px); }
+.wx { display: flex; align-items: center; gap: clamp(16px, 2.6vw, 28px); }
 .wx .temp { font-family: var(--f-time); font-weight: 300; font-size: clamp(74px, 10.5vw, 124px); line-height: .85; font-variant-numeric: tabular-nums; }
-.wx .temp sup { font-size: .4em; vertical-align: top; color: var(--muted); margin-left: 2px; }
-.wxtext { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.wx .cond { font-size: clamp(24px, 2.9vw, 32px); }
-.wx .meta { color: var(--muted); font-size: clamp(17px, 2vw, 21px); font-family: var(--f-mono), var(--f-cjk); display: flex; flex-wrap: wrap; gap: 2px 16px; }
+.wx .temp sup { font-size: .36em; vertical-align: top; color: var(--dim); margin-left: 2px; }
+.wxtext { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.wx .cond { font-size: clamp(24px, 2.9vw, 32px); line-height: 1.1; }
+.wx .meta { color: var(--muted); font-size: clamp(17px, 2vw, 21px); display: flex; flex-wrap: wrap; gap: 2px 18px; font-variant-numeric: tabular-nums; }
 .wx .meta span { white-space: nowrap; }
+.wx .meta i, .lbl { font-style: normal; color: var(--dim); margin-right: .3em; }
 .note { color: var(--muted); font-size: 15px; }
-.foot { display: flex; flex-direction: column; align-items: flex-start; gap: clamp(12px, 2.2vh, 20px); }
-.sunrow { display: flex; flex-wrap: wrap; gap: 6px clamp(16px, 2.6vw, 28px); align-items: baseline; }
-.lbl { font-size: 17px; color: var(--muted); letter-spacing: .1em; }
-.val { font-family: var(--f-mono); font-size: clamp(20px, 2.6vw, 27px); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.val.sunv { color: var(--sun); }
+.foot { display: flex; flex-direction: column; align-items: flex-start; gap: clamp(12px, 2vh, 18px); }
+.sunrow { display: flex; flex-wrap: wrap; gap: 6px clamp(18px, 2.8vw, 30px); align-items: baseline; }
+.lbl { font-size: clamp(16px, 1.9vw, 19px); letter-spacing: .06em; }
+.val { font-size: clamp(20px, 2.5vw, 26px); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 button.city {
-  font: inherit; font-size: 16px; color: var(--fg); background: transparent;
+  font: inherit; font-size: 16px; color: var(--muted); background: transparent;
   border: 1px solid var(--faint); border-radius: 999px; padding: 5px 12px; cursor: pointer;
 }
 button.city:hover { border-color: var(--muted); }
@@ -153,8 +154,8 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
     <div class="note" id="wxnote" hidden></div>
     <div class="foot">
       <div class="sunrow">
-        <span><span class="lbl">日出</span> <span class="val" id="rise">--:--</span></span>
-        <span><span class="lbl">日落</span> <span class="val" id="set">--:--</span></span>
+        <span><span class="lbl">日出</span><span class="val" id="rise">--:--</span></span>
+        <span><span class="lbl">日落</span><span class="val" id="set">--:--</span></span>
       </div>
       <button class="city" id="cityBtn" type="button">上海</button>
     </div>
@@ -185,7 +186,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
 <script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/5.0.0/satellite.min.js"></script>
 <script>
 (function () {
-  const VERSION = "2026-10-29.1";
+  const VERSION = "2026-10-29.3";
   const $ = id => document.getElementById(id);
   const RAD = Math.PI / 180, DEG = 180 / Math.PI;
 
@@ -709,9 +710,13 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
       $("cond").textContent = WX[cur.weather_code] || "—";
       const hi = Math.round(d.temperature_2m_max[1]), lo = Math.round(d.temperature_2m_min[1]);
       const pp = d.precipitation_probability_max && d.precipitation_probability_max[1];
-      const metaParts = [lo + "° / " + hi + "°", "体感 " + Math.round(cur.apparent_temperature) + "°", "湿度 " + cur.relative_humidity_2m + "%"];
-      if (pp != null) metaParts.push("降水 " + pp + "%");
-      $("wxmeta").replaceChildren(...metaParts.map(t => { const e = document.createElement("span"); e.textContent = t; return e; }));
+      const metaParts = [["", lo + "–" + hi + "°"], ["体感", Math.round(cur.apparent_temperature) + "°"]];
+      if (pp != null) metaParts.push(["降水", pp + "%"]);
+      $("wxmeta").replaceChildren(...metaParts.map(([k, v]) => {
+        const e = document.createElement("span");
+        if (k) { const l = document.createElement("i"); l.textContent = k; e.appendChild(l); }
+        e.appendChild(document.createTextNode(v)); return e;
+      }));
       $("wxnote").hidden = true;
       const sum = summarize(j);
       wxSummary = sum; renderMsg(new Date());
@@ -806,8 +811,9 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
     return "晚上好，" + nm + "。";
   }
   function renderMsg(now) {
-    const esc = t => t.replace(/[&<>]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[ch]);
-    $("msg").innerHTML = greeting(now) + (wxSummary ? esc(wxSummary) : "");
+    // one chunk per sentence, so lines only break between sentences
+    const parts = [greeting(now)].concat((wxSummary.match(/[^。]+。/g) || []));
+    $("msg").replaceChildren(...parts.map(t => { const e = document.createElement("span"); e.textContent = t; return e; }));
   }
 
   /* ---------- Tick ---------- */

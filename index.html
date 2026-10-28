@@ -69,8 +69,9 @@ canvas#orbit { position: absolute; inset: 0; width: 100%; height: 100%; pointer-
 .wx .temp { font-family: var(--f-time); font-weight: 300; font-size: clamp(74px, 10.5vw, 124px); line-height: .85; font-variant-numeric: tabular-nums; }
 .wx .temp sup { font-size: .36em; vertical-align: top; color: var(--dim); margin-left: 2px; }
 .wxtext { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.wx .cond { font-size: clamp(24px, 2.9vw, 32px); line-height: 1.1; }
-.wx .meta { color: var(--muted); font-size: clamp(17px, 2vw, 21px); display: grid; grid-template-columns: auto auto; justify-content: start; gap: 2px 22px; font-variant-numeric: tabular-nums; }
+.wx .cond { font-size: clamp(24px, 2.9vw, 32px); line-height: 1.1; display: flex; align-items: baseline; gap: .6em; flex-wrap: wrap; }
+.wx .range { color: var(--muted); font-size: .78em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wx .meta { color: var(--muted); font-size: clamp(17px, 2vw, 21px); display: flex; flex-wrap: wrap; gap: 2px 20px; font-variant-numeric: tabular-nums; }
 .wx .meta span { white-space: nowrap; }
 .wx .meta i, .lbl { font-style: normal; color: var(--dim); margin-right: .3em; }
 .note { color: var(--muted); font-size: 15px; }
@@ -147,7 +148,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
     <div class="wx" id="wx">
       <div class="temp" id="temp">--<sup>°C</sup></div>
       <div class="wxtext">
-        <div class="cond" id="cond">正在获取天气</div>
+        <div class="cond"><span id="cond">正在获取天气</span><span class="range" id="range"></span></div>
         <div class="meta" id="wxmeta"></div>
       </div>
     </div>
@@ -186,7 +187,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
 <script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/5.0.0/satellite.min.js"></script>
 <script>
 (function () {
-  const VERSION = "2026-10-29.4";
+  const VERSION = "2026-10-29.5";
   const $ = id => document.getElementById(id);
   const RAD = Math.PI / 180, DEG = 180 / Math.PI;
 
@@ -710,7 +711,8 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
       $("cond").textContent = WX[cur.weather_code] || "—";
       const hi = Math.round(d.temperature_2m_max[1]), lo = Math.round(d.temperature_2m_min[1]);
       const pp = d.precipitation_probability_max && d.precipitation_probability_max[1];
-      const metaParts = [["", lo + "–" + hi + "°"], ["体感", Math.round(cur.apparent_temperature) + "°"], ["湿度", cur.relative_humidity_2m + "%"]];
+      $("range").textContent = lo + "–" + hi + "°";
+      const metaParts = [["体感", Math.round(cur.apparent_temperature) + "°"], ["湿度", cur.relative_humidity_2m + "%"]];
       if (pp != null) metaParts.push(["降水", pp + "%"]);
       $("wxmeta").replaceChildren(...metaParts.map(([k, v]) => {
         const e = document.createElement("span");
@@ -723,6 +725,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sun); outl
       wxTimer = setTimeout(loadWeather, 15 * 60000);
     } catch (e) {
       $("cond").textContent = "天气暂时无法获取";
+      $("range").textContent = "";
       $("temp").innerHTML = "--<sup>°C</sup>";
       $("wxmeta").textContent = "";
       wxSummary = ""; renderMsg(new Date());
